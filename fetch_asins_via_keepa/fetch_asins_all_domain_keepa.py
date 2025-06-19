@@ -16,7 +16,7 @@ DOMAINS = {
 }
 
 NUM_ASINS = 1
-KEEPA_API_KEY = "32emg7srpcrnhllidjlmcjoqqklqm5jou6rciqhj1uav2t50cjmg5a7d81ffhm8i"  # Replace this
+KEEPA_API_KEY = ""  # Replace this
 OUTPUT_FILE = "asin_results_all_domains.json"
 
 FALLBACK_KEYWORDS = [

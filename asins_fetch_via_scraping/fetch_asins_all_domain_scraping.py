@@ -25,16 +25,17 @@ ACCEPT_LANGUAGES = [
     "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
 ]
 
-# DOMAIN_LABELS = {
-#     "com" : "AmazonUS",
-#     "co.uk" : "AmazonGB",
-#     "co.jp": "AmazonJP",
-#     "de": "AmazonDE"
-# }
+DOMAIN_LABELS = {
+    "com" : "AmazonUS",
+    "co.uk" : "AmazonGB",
+    "co.jp": "AmazonJP",
+    "de": "AmazonDE"
+}
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1PPIC2TTRGap722HfZvFl9azMnJCoiNsORb8GDC1OyAQ/edit?pli=1#gid=1089158624"
 COLUMN_NAME = "Product Sub Category"
-CREDENTIALS_JSON = "your_google_service_account.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CREDENTIALS_JSON = os.path.join(BASE_DIR, "../secrets/your_google_service_account.json")
 
 FALLBACK_KEYWORDS = [
     'hair care', 'skin care', 'fragrance', 'oral care', 'makeup', 'home care', 'food', 'beverages',
@@ -43,7 +44,7 @@ FALLBACK_KEYWORDS = [
     'raw materials & commodities', 'industrial'
 ]
 
-# AMAZON_DOMAINS = ["com", "co.uk", "co.jp", "de"]
+AMAZON_DOMAINS = ["com", "co.uk", "co.jp", "de"]
 
 MAX_RESULTS = 50
 OUTPUT_DIR = "asin_output_scraping"

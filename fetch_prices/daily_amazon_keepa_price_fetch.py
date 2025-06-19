@@ -9,7 +9,11 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 # ================================
 # 🔧 CONFIGURATION
 # ================================
-KEEPA_API_KEY = '32emg7srpcrnhllidjlmcjoqqklqm5jou6rciqhj1uav2t50cjmg5a7d81ffhm8i'
+# Load Keepa API key from secrets file
+with open('../secrets/keepa_config.json') as f:
+    keepa_config = json.load(f)
+
+KEEPA_API_KEY = keepa_config["KEEPA_API_KEY"]
 ASIN_JSON_PATH = '/Users/macm3/Desktop/Keepa_amazon/asins_fetch_via_scraping/asin_output_scraping/all_domains_top_asins.json'
 
 # Target column schema
