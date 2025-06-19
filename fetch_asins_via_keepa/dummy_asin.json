@@ -1,0 +1,18 @@
+{
+    "AmazonUS": {
+        "shampoo": [
+            "B003JKFEL8",
+            "B002WTC38Y"
+        ],
+        "conditioner": [
+            "B003JKFEL8",
+            "B002WTC38Y"
+        ]
+    },
+
+    "AmazonJP": {
+        "shampoo": [
+            "B003JKFEL8"
+        ]
+    }
+}
