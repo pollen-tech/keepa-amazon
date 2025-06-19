@@ -1,3 +1,4 @@
 # Ignore secrets folder and its JSON files
+secrets/
 secrets/keepa_config.json
 secrets/google_service_account.json
