@@ -35,7 +35,7 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-BATCH_SIZE = 100          # Keepa API limit
+BATCH_SIZE = 50           # Reduced batch size to match token refill rate
 FLUSH_INTERVAL = 5_000    # rows per Parquet file (~1-2 MB)
 MAX_RETRIES = 3           # max retries per batch
 INITIAL_BACKOFF = 1.0     # seconds
@@ -225,7 +225,7 @@ def fetch_batch_with_retry(api: keepa.Keepa, asin_batch: List[str], domain_id: s
         "history": 0,
         "stats": 1,
         "rating": 1,
-        "wait": 0,
+        "wait": 60,  # block up to 60s to throttle and avoid 429s
     }
     for attempt in range(MAX_RETRIES):
         try:
