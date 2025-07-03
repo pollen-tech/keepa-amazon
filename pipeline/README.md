@@ -1,19 +1,26 @@
 # 🌊 Amazon Keepa Streaming Pipeline
 
-Self-contained Cloud Run deployment for the Amazon Keepa price monitoring pipeline.
+Self-contained Cloud Run deployment for Amazon Keepa price monitoring and ingestion pipeline.
 
 ## 🚀 Quick Deploy
 
 ```bash
-cd pipeline/
-./deploy.sh
+cd pipeline
+# Build, push, and deploy both the FastAPI service and the Cloud Run job
+gcloud builds submit . --config cloudbuild.yaml
 ```
 
 ## 📋 Prerequisites
 
-1. **Google Cloud Project** with billing enabled
-2. **Keepa API Key** stored in Google Secret Manager
-3. **gcloud CLI** authenticated with appropriate permissions
+- A **Google Cloud Project** with billing enabled
+- **gcloud CLI** installed and authenticated (`gcloud auth login`)
+- **Keepa API Key** stored in Secret Manager as `keepa-api-key`
+- A **service account** with the following roles:
+  - `roles/bigquery.dataEditor`
+  - `roles/storage.objectAdmin`
+  - `roles/secretmanager.secretAccessor`
+  - `roles/run.admin`
+  - `roles/cloudscheduler.admin`
 
 ## 🏗️ Architecture
 
@@ -27,174 +34,134 @@ This pipeline uses a **streaming architecture** with:
 
 ```
 pipeline/
-├── daily/
-│   ├── Dockerfile          # Container configuration
-│   └── web_service.py      # FastAPI HTTP service
-├── deploy/
-│   ├── cloudbuild.yaml     # Cloud Build configuration
-│   └── cloud_run_service.yaml  # Cloud Run service spec
-├── config/
-│   ├── pipeline_config.py  # Pipeline settings
-│   └── bigquery_schema.json # BigQuery table schema
-├── pyproject.toml          # Python dependencies
-├── uv.lock                 # Locked dependencies
-├── deploy.sh              # Deployment script
-└── README.md              # This file
+├── scripts/                  # Helper scripts for manual trigger & scheduling
+│   ├── trigger_pipeline.sh   # Invoke the /trigger endpoint via gcloud + curl
+│   └── schedule_keepa_sync.sh# Set up Cloud Scheduler to run keepa-sync daily
+├── pipeline/                 # Core Python package
+│   ├── __init__.py
+│   ├── app.py                # FastAPI service endpoints
+│   ├── streaming_daily_pipeline.py  # run_pipeline() logic
+│   └── config.py             # Env var & Secret Manager config
+├── tests/                    # pytest unit & integration tests
+├── Dockerfile                # Multi-stage container build
+├── cloudbuild.yaml           # CI/CD: build, push, deploy service & job
+├── .dockerignore             # Files to exclude from Docker context
+├── .gcloudignore             # Files to exclude from gcloud context
+├── pyproject.toml            # Python dependency management
+├── uv.lock                   # Locked dependency versions
+└── README.md                 # This file
 ```
 
-## 🔧 Setup
+## 📦 CI/CD Pipeline (Cloud Build)
 
-### 1. Store Keepa API Key
+Cloud Build (via `cloudbuild.yaml`) performs:
 
-```bash
-echo -n "YOUR_KEEPA_API_KEY" | gcloud secrets create keepa-api-key \
-    --data-file=- \
-    --project=YOUR_PROJECT_ID
-```
+1. **Build** Docker image: `gcr.io/$PROJECT_ID/keepa:latest`
+2. **Push** to Container Registry
+3. **Deploy** FastAPI **service** `keepa-api` (HTTP-triggered)
+4. **Deploy** Cloud Run **job** `keepa-sync` (headless batch)
 
-### 2. Grant Service Account Permissions
+Build artifacts:
 
-```bash
-# Create service account if needed
-gcloud iam service-accounts create amazon-keepa-pipeline \
-    --display-name="Amazon Keepa Pipeline"
-
-# Grant necessary permissions
-PROJECT_ID=YOUR_PROJECT_ID
-SERVICE_ACCOUNT=amazon-keepa-pipeline@${PROJECT_ID}.iam.gserviceaccount.com
-
-# BigQuery permissions
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${SERVICE_ACCOUNT}" \
-    --role="roles/bigquery.dataEditor"
-
-# Storage permissions (for Parquet staging)
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:${SERVICE_ACCOUNT}" \
-    --role="roles/storage.objectAdmin"
-
-# Secret Manager access
-gcloud secrets add-iam-policy-binding keepa-api-key \
-    --member="serviceAccount:${SERVICE_ACCOUNT}" \
-    --role="roles/secretmanager.secretAccessor"
-```
-
-## 🚀 Deployment
-
-### Deploy to Cloud Run
-
-```bash
-cd pipeline/
-./deploy.sh
-```
-
-The script will:
-1. Create GCS staging bucket (if needed)
-2. Verify Keepa API key secret exists
-3. Build and push container image
-4. Deploy to Cloud Run
-5. Display service URL and endpoints
-
-### Manual Deployment (Alternative)
-
-```bash
-# From pipeline directory
-gcloud builds submit . \
-    --config=deploy/cloudbuild.yaml \
-    --project=YOUR_PROJECT_ID
+```yaml
+images:
+  - 'gcr.io/$PROJECT_ID/keepa:latest'
 ```
 
 ## 🌐 API Endpoints
 
-Once deployed, the service exposes:
+| Path       | Method | Description                    |
+|------------|--------|--------------------------------|
+| `/`        | GET    | Health check                   |
+| `/status`  | GET    | Current pipeline status        |
+| `/trigger` | POST   | Start pipeline asynchronously  |
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Health check & status |
-| `/status` | GET | Pipeline execution status |
-| `/trigger` | POST | Start pipeline (async) |
-| `/trigger-sync` | POST | Start pipeline (wait for completion) |
-| `/logs` | GET | View recent execution logs |
+## 🔧 Manual Trigger
+
+Use the helper script or raw gcloud + curl:
+
+```bash
+# Make script executable
+chmod +x scripts/trigger_pipeline.sh
+
+# Run it (adjust project/region/service if needed)
+./scripts/trigger_pipeline.sh \
+  --project YOUR_PROJECT_ID \
+  --region us-central1 \
+  --service keepa-api
+```
+
+Or one-off without script:
+
+```bash
+URL=$(gcloud run services describe keepa-api \
+       --project YOUR_PROJECT_ID \
+       --region us-central1 \
+       --format='value(status.url)')
+TOKEN=$(gcloud auth print-identity-token)
+
+curl -X POST "$URL/trigger" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json"
+```
+
+## ⏰ Scheduling (Daily Cron)
+
+When ready to automate, set up Cloud Scheduler to fire the batch job:
+
+```bash
+chmod +x scripts/schedule_keepa_sync.sh
+./scripts/schedule_keepa_sync.sh \
+  --project YOUR_PROJECT_ID \
+  --region us-central1 \
+  --job keepa-sync \
+  --schedule "0 3 * * *" \
+  --time-zone "UTC"
+```
+
+This script will:
+
+- Grant the Cloud Scheduler agent `roles/run.invoker` on the `keepa-sync` job
+- Create (or update) a Scheduler job named `keepa-sync-schedule`
+- POST to the Cloud Run Jobs API daily at the given cron
+
+## ⚙️ Configuration & Secrets
+
+- **Secret Name**: `keepa-api-key` in Secret Manager
+- **Env Vars** (set via Cloud Run and Jobs):
+  - `GCP_PROJECT_ID`  
+  - any other pipeline-specific variables
 
 ## 🧪 Testing
 
-### Health Check
-```bash
-curl https://YOUR-SERVICE-URL.run.app/
-```
-
-### Trigger Pipeline Manually
-```bash
-# Async (returns immediately)
-curl -X POST https://YOUR-SERVICE-URL.run.app/trigger
-
-# Sync (waits for completion)
-curl -X POST https://YOUR-SERVICE-URL.run.app/trigger-sync
-```
-
-### Check Status
-```bash
-curl https://YOUR-SERVICE-URL.run.app/status
-```
-
-## ⏰ Scheduling
-
-### Option 1: Cloud Scheduler (Recommended)
+Run unit and integration tests locally:
 
 ```bash
-gcloud scheduler jobs create http amazon-keepa-daily \
-    --location=us-central1 \
-    --schedule="0 2 * * *" \
-    --uri="https://YOUR-SERVICE-URL.run.app/trigger" \
-    --http-method=POST \
-    --oidc-service-account-email=YOUR-SERVICE-ACCOUNT@PROJECT.iam.gserviceaccount.com
+cd pipeline
+pm  # if using uv plugin to install deps
+pytest --maxfail=1 --disable-warnings -q
+pytest --run-integration --run-keepa
 ```
 
-### Option 2: Manual Triggering
+## 🛠️ Local Development
 
-For the first few days, manually trigger via:
-- Cloud Console UI
-- `curl` commands
-- Custom dashboard
+Install dependencies and run the FastAPI app:
 
-## 📊 Monitoring
-
-### BigQuery Progress
-```sql
--- Check today's data
-SELECT marketplace, category, COUNT(*) as records
-FROM `YOUR_PROJECT.amazon_keepa_products.price_history`
-WHERE ingestion_date = CURRENT_DATE()
-GROUP BY marketplace, category;
-```
-
-### Cloud Run Logs
 ```bash
-gcloud run services logs read amazon-keepa-streaming-pipeline \
-    --project=YOUR_PROJECT_ID \
-    --region=us-central1 \
-    --limit=50
-```
-
-### GCS Staging Files
-```bash
-gsutil ls -l gs://YOUR_PROJECT-keepa-staging/price_data/
+cd pipeline
+pip install uv
+uv sync --no-dev           # synchronize virtual env
+uvicorn pipeline.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ## 🔍 Troubleshooting
 
-### Pipeline Not Starting
-- Check Keepa API key secret exists
-- Verify service account permissions
-- Check Cloud Run logs for errors
-
-### Memory Issues
-- Pipeline uses streaming (max 25MB RAM)
-- If OOM, check for code modifications
-
-### Resume After Failure
-- Pipeline automatically resumes from checkpoint
-- Check GCS for `daily_pipeline/state.json`
+- **Container fails to start**: ensure `CMD` in Dockerfile points to `pipeline.app:app`
+- **Permission errors**: verify IAM roles for service account and scheduler agent
+- **Pipeline errors**: check Cloud Run logs:
+  ```bash
+gcloud run services logs read keepa-api --region us-central1 --limit 50
+```
 
 ## 🛡️ Security
 

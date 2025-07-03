@@ -7,7 +7,7 @@ cd "${SCRIPT_DIR}"/..
 
 set -e
 
-SERVICE_NAME=${1:-amazon-keepa-pipeline}
+SERVICE_NAME=${1:-keepa-api}
 REGION=${2:-us-central1}
 PROJECT_ID=${GCP_PROJECT_ID:-pollen-sandbox-warehouse}
 
@@ -29,7 +29,7 @@ gcloud run deploy $SERVICE_NAME \
   --concurrency 1 \
   --min-instances 0 \
   --max-instances 1 \
-  --set-env-vars GCP_PROJECT_ID=$PROJECT_ID
+  --set-env-vars GCP_PROJECT_ID=$PROJECT_ID,KEEPA_API_SECRET_NAME=keepa-api-key
 
 echo "✅ Deployment complete!"
 echo "   Service URL: https://$SERVICE_NAME-$REGION.run.app"

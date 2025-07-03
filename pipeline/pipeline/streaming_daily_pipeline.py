@@ -43,10 +43,10 @@ GCS_BUCKET = f"{GCP_PROJECT_ID}-keepa-staging"
 STATE_BLOB = "daily_pipeline/state.json"
 
 DOMAIN_MAPPING = {
-    "AmazonUS": ("US", "USD"),
-    "AmazonGB": ("GB", "GBP"),
-    "AmazonDE": ("DE", "EUR"),
-    "AmazonJP": ("JP", "JPY"),
+    "AmazonUS": (1, "USD"),
+    "AmazonGB": (3, "GBP"),
+    "AmazonDE": (4, "EUR"),
+    "AmazonJP": (6, "JPY"),
 }
 
 BQ_SCHEMA = pa.schema([
@@ -216,16 +216,25 @@ def rows_from_products(products: List[Dict], marketplace: str, category: str, fx
 
 
 def fetch_batch_with_retry(api: keepa.Keepa, asin_batch: List[str], domain_id: str) -> List[Dict]:
+    # Use direct HTTP GET instead of Keepa client query
+    url = "https://api.keepa.com/product"
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": domain_id,
+        "asin": ",".join(asin_batch),
+        "history": 0,
+        "stats": 1,
+        "rating": 1,
+        "wait": 0,
+    }
     for attempt in range(MAX_RETRIES):
         try:
-            return api.query(
-                asin_batch,
-                domain=domain_id,
-                history=False,
-                stats=1,
-                rating=True,
-                wait=True,
-            )
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if "error" in data:
+                raise Exception(data["error"]["message"])
+            return data.get("products", [])
         except Exception as exc:
             if attempt == MAX_RETRIES - 1:
                 print(f"    ❌ Batch failed after {MAX_RETRIES} attempts: {exc}")
@@ -301,14 +310,30 @@ def run_pipeline():  # renamed from main()
     if not KEEPA_API_KEY or KEEPA_API_KEY == "your-keepa-api-key":
         print("❌ KEEPA_API_KEY not set")
         return
-    asin_path = Path("asins_fetch_via_scraping/asin_output_scraping/all_domains_top_asins.json")
-    if not asin_path.exists():
-        print(f"❌ ASIN file missing: {asin_path}")
-        return
-    asin_data = json.loads(asin_path.read_text())
+    # Fetch ASINs from BigQuery lookup table
+    asin_table = f"{GCP_PROJECT_ID}.{GCP_DATASET_ID}.{os.getenv('ASIN_TABLE_ID', 'asin_lookup')}"
+    query = f"""
+SELECT domain, category, ARRAY_AGG(asin) as asins
+FROM `{asin_table}`
+GROUP BY domain, category
+"""
+    bq_client = bigquery.Client(project=GCP_PROJECT_ID)
+    job = bq_client.query(query)
+    results = job.result()
+    asin_data: Dict[str, Dict[str, List[str]]] = {}
+    for row in results:
+        domain = row['domain']
+        category = row['category']
+        asins = row['asins'] or []
+        asin_data.setdefault(domain, {})[category] = asins
     gcs_client = storage.Client(project=GCP_PROJECT_ID)
     bq_client = bigquery.Client(project=GCP_PROJECT_ID)
     api = keepa.Keepa(KEEPA_API_KEY)
+    # One-time token refresh to prime refillRate using blocking mode
+    try:
+        api._request("token", {"key": KEEPA_API_KEY}, wait=True)
+    except Exception as e:
+        print(f"⚠️ Keepa token refresh failed: {e}")
     ensure_gcs_bucket(gcs_client, GCS_BUCKET)
     today_prefix = f"price_data/{date.today().isoformat()}"
     checkpoint = CheckpointManager(gcs_client, GCS_BUCKET, STATE_BLOB)
