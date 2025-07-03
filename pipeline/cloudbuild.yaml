@@ -1,0 +1,52 @@
+steps:
+  # 1) Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--tag'
+      - 'gcr.io/$PROJECT_ID/keepa:latest'
+      - '.'
+
+  # 1.1) Push the built image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/keepa:latest'
+
+  # 2) Deploy the HTTP service (FastAPI)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'keepa-api'
+      - '--image=gcr.io/$PROJECT_ID/keepa:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=60m'
+      - '--concurrency=1'
+      - '--min-instances=0'
+      - '--max-instances=3'
+      - '--update-env-vars'
+      - 'GCP_PROJECT_ID=$PROJECT_ID'
+
+  # 3) Deploy the batch Job for daily sync
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud beta run jobs deploy keepa-sync \
+          --image gcr.io/$PROJECT_ID/keepa:latest \
+          --region us-central1 \
+          --max-retries 3 \
+          --set-env-vars GCP_PROJECT_ID=$PROJECT_ID
+
+# 4) Push the image by listing it here
+images:
+  - 'gcr.io/$PROJECT_ID/keepa:latest'
+
+# timeout for the entire build
+timeout: '1200s' 

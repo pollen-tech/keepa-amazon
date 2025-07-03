@@ -1,0 +1,41 @@
+[project]
+name = "keepa-amazon"
+version = "0.1.0"
+description = "Amazon Keepa price monitoring pipeline"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "google-cloud-bigquery>=3.34.0",
+    "google-cloud-storage>=2.18.0",
+    "google-cloud-secret-manager>=2.20.0",
+    "keepa>=1.3.15",
+    "pandas>=2.3.0",
+    "pyarrow>=20.0.0",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.4",
+    "tqdm>=4.66.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "pytest-mock>=3.12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pipeline"]
